@@ -179,9 +179,19 @@ let activeDate = null;
 
 // ---------- Daten ----------
 async function fetchPrices() {
+  // 1. preise.json aus dem eigenen Repository (legt die GitHub-Action dort ab; kein Zugriff auf fremde Server nötig)
+  try {
+    const r = await fetch("preise.json?t=" + Date.now(), { cache: "no-store" });
+    if (r.ok) {
+      const d = await r.json(), u = d.unix_seconds || [];
+      if (u.length && u[u.length - 1] * 1000 + HOUR > Date.now()) return d;   // reicht bis jetzt
+    }
+  } catch {}
+  // 2. Ersatz: direkt bei Energy-Charts (klappt nur, wenn der Browser den Abruf zulässt)
   const today = bp(Date.now()).date;
   const u = "https://api.energy-charts.info/price?bzn=" + ZONE + "&start=" + shiftDate(today, -PAST_DAYS) + "&end=" + shiftDate(today, 1);
-  const r = await fetch(u);
+  let r;
+  try { r = await fetch(u); } catch { throw new Error("Keine aktuellen Preise: preise.json fehlt oder ist veraltet, und der direkte Abruf wird vom Browser blockiert."); }
   if (!r.ok) throw new Error("energy-charts.info antwortet mit Fehler " + r.status);
   return r.json();
 }
