@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#e9eef2" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#10171d" media="(prefers-color-scheme: dark)">
+<title>Tagwetter</title>
+<style>
+/* Layout: fester Kopf (Ort, Tages-Reiter), darunter drei Tagesseiten nebeneinander,
+   zwischen denen man waagerecht wischt (scroll-snap). Jede Seite: Kennzahlen, dann Stundenzeilen. */
+:root{
+  --bg:#e9eef2; --card:#ffffff; --ink:#15212b; --muted:#5f7180; --line:#d7dfe6;
+  --sun:#e09a00; --sun-soft:#fbeecb; --rain:#256fc0; --rain-soft:#dbe9f8; --now:#fff4d1;
+  --font: system-ui, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --bg:#10171d; --card:#18222b; --ink:#e8eef3; --muted:#93a4b2; --line:#2a3743;
+    --sun:#f2b632; --sun-soft:#3a3118; --rain:#62a8f0; --rain-soft:#1b2f45; --now:#2c2a1b;
+    color-scheme: dark;
+  }
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--ink);font-family:var(--font);font-size:16px;line-height:1.35;
+  display:flex;flex-direction:column;-webkit-tap-highlight-color:transparent}
+button,input{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--rain);outline-offset:2px}
+
+header{padding:12px 16px 8px;display:flex;flex-direction:column;gap:10px}
+.top{display:flex;align-items:center;justify-content:space-between;gap:12px}
+#placeBtn{background:none;border:0;padding:4px 0;font-size:1.25rem;font-weight:700;display:flex;align-items:center;gap:6px;min-width:0}
+#placeBtn span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#placeBtn svg{flex:none;color:var(--muted)}
+#refresh{background:var(--card);border:1px solid var(--line);border-radius:999px;padding:6px 12px;font-size:.85rem;color:var(--muted);white-space:nowrap}
+#status{font-size:.8rem;color:var(--muted);min-height:1.1em}
+#status.err{color:#c0392b}
+
+#placePanel{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:10px}
+#placePanel[hidden]{display:none}
+.search{display:flex;gap:8px}
+.search input{flex:1;min-width:0;padding:9px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg)}
+.btn{padding:9px 12px;border:1px solid var(--line);border-radius:8px;background:var(--bg)}
+#results{display:flex;flex-direction:column;gap:6px}
+#results button{text-align:left;padding:9px 10px;border:1px solid var(--line);border-radius:8px;background:none}
+#results small{color:var(--muted)}
+
+nav{display:flex;gap:8px}
+nav button{flex:1;background:none;border:1px solid var(--line);border-radius:10px;padding:7px 4px;display:flex;flex-direction:column;align-items:center;gap:1px;color:var(--muted)}
+nav button b{font-size:.95rem;color:var(--ink)}
+nav button small{font-size:.72rem}
+nav button[aria-selected="true"]{background:var(--ink);border-color:var(--ink);color:var(--bg)}
+nav button[aria-selected="true"] b{color:var(--bg)}
+
+main{flex:1;min-height:0;display:flex;overflow-x:auto;overflow-y:hidden;scroll-snap-type:x mandatory;scrollbar-width:none;overscroll-behavior-x:contain}
+main::-webkit-scrollbar{display:none}
+.day{flex:0 0 100%;scroll-snap-align:start;scroll-snap-stop:always;overflow-y:auto;padding:4px 16px 16px;display:flex;flex-direction:column;gap:12px}
+.empty{margin:auto;color:var(--muted);text-align:center;padding:24px}
+
+.sum{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.tile{background:var(--card);border-radius:12px;padding:10px 10px 9px;display:flex;flex-direction:column;gap:2px;min-width:0}
+.tile small{font-size:.72rem;color:var(--muted);letter-spacing:.02em}
+.tile b{font-size:1.2rem;font-variant-numeric:tabular-nums;white-space:nowrap}
+.tile span{font-size:.75rem;color:var(--muted)}
+.tile.sun b{color:var(--sun)} .tile.rain b{color:var(--rain)}
+.note{font-size:.9rem;color:var(--muted);margin:0 2px}
+.note b{color:var(--ink);font-weight:600}
+
+.hours{background:var(--card);border-radius:12px;padding:4px 0;font-variant-numeric:tabular-nums}
+.row{display:grid;grid-template-columns:34px 26px 40px minmax(0,1fr) 92px;align-items:center;column-gap:8px;padding:6px 12px;min-height:38px}
+.row + .row{border-top:1px solid var(--line)}
+.row.head{min-height:0;padding-top:6px;padding-bottom:6px;font-size:.7rem;color:var(--muted);letter-spacing:.03em}
+.row.now{background:var(--now)}
+.hr{color:var(--muted);font-size:.9rem;text-align:right}
+.row.now .hr{color:var(--ink);font-weight:700}
+.ic{display:flex;color:var(--muted)} .ic svg{width:24px;height:24px}
+.t{font-weight:700;font-size:1.05rem;text-align:right}
+.sunc{display:flex;align-items:center;gap:6px;min-width:0}
+.bar{flex:1;height:10px;border-radius:5px;background:var(--sun-soft);overflow:hidden;min-width:0}
+.bar i{display:block;height:100%;background:var(--sun);border-radius:5px}
+.sunc small{width:30px;text-align:right;font-size:.75rem;color:var(--muted)}
+.rainc{display:flex;justify-content:flex-end;align-items:baseline;gap:6px;white-space:nowrap}
+.rainc b{color:var(--rain);font-size:.95rem}
+.rainc b.dry{color:var(--muted);font-weight:400}
+.rainc small{font-size:.75rem;color:var(--muted);width:32px;text-align:right}
+.rainc.wet{background:var(--rain-soft);border-radius:6px;padding:2px 6px;margin-right:-6px}
+
+footer{padding:6px 16px 10px;font-size:.72rem;color:var(--muted);text-align:center}
+footer a{color:inherit}
+@media (prefers-reduced-motion: reduce){ main{scroll-behavior:auto} }
+</style>
+</head>
+<body>
+<header>
+  <div class="top">
+    <button id="placeBtn" type="button" aria-expanded="false" aria-controls="placePanel">
+      <span id="placeName">Hamburg</span>
+      <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 6l5 5 5-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </button>
+    <button id="refresh" type="button">Aktualisieren</button>
+  </div>
+  <div id="placePanel" hidden>
+    <form class="search" id="searchForm">
+      <input id="q" type="search" placeholder="Ort suchen, z. B. Bergedorf" autocomplete="off" aria-label="Ort suchen">
+      <button class="btn" type="submit">Suchen</button>
+    </form>
+    <div id="results"></div>
+    <button class="btn" id="geoBtn" type="button">Meinen Standort verwenden</button>
+  </div>
+  <nav id="tabs" role="tablist" aria-label="Tag wählen"></nav>
+  <div id="status" role="status">Lade Wetter …</div>
+</header>
+<main id="days" tabindex="0" aria-label="Tage, wischen zum Wechseln">
+  <section class="day"><div class="empty">Lade Wetter …</div></section>
+</main>
+<footer>Wetterdaten: <a href="https://open-meteo.com/">Open-Meteo.com</a> (u. a. DWD ICON), CC BY 4.0</footer>
+
+<script>
+"use strict";
+// ---------- Einstellungen ----------
+const DEFAULT_PLACE = { name: "Hamburg", lat: 53.55, lon: 9.99 };
+const WINDOW = { weekday: [5, 19], weekend: [9, 17] };   // Stunden von–bis
+const DAYS = 3;                                           // heute + 2 Tage
+const MAX_AGE_MIN = 30;                                   // danach beim Öffnen neu laden
+
+// ---------- Hilfen ----------
+const $ = id => document.getElementById(id);
+const load = k => { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } };
+const save = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} };
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const mmFmt = new Intl.NumberFormat("de-DE", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+const WD = ["So", "Mo", "Di", "Mi", "Do", "Fr", "Sa"];
+
+let place = load("tw.place") || DEFAULT_PLACE;
+let current = null;      // { t, place, data }
+let firstRender = true;
+
+// ---------- Daten holen ----------
+async function fetchWeather(p) {
+  const u = new URL("https://api.open-meteo.com/v1/forecast");
+  u.search = new URLSearchParams({
+    latitude: p.lat, longitude: p.lon, timezone: "auto", forecast_days: DAYS,
+    hourly: "temperature_2m,precipitation,precipitation_probability,sunshine_duration,weather_code,is_day"
+  });
+  const r = await fetch(u);
+  if (!r.ok) throw new Error("Open-Meteo antwortet mit Fehler " + r.status);
+  return r.json();
+}
+
+// Rohdaten -> Tage mit Stundenzeilen (reine Funktion, gut testbar)
+function buildDays(data, now = Date.now()) {
+  const h = data.hourly, byDate = new Map();
+  h.time.forEach((t, i) => {
+    const d = t.slice(0, 10);
+    if (!byDate.has(d)) byDate.set(d, []);
+    byDate.get(d)[+t.slice(11, 13)] = i;
+  });
+  const local = new Date(now + (data.utc_offset_seconds || 0) * 1000);
+  const today = local.toISOString().slice(0, 10), nowHr = local.getUTCHours();
+  const num = v => (typeof v === "number" ? v : null);
+
+  return [...byDate.entries()].slice(0, DAYS).map(([date, idx], n) => {
+    const dow = new Date(date + "T12:00:00Z").getUTCDay();
+    const weekend = dow === 0 || dow === 6;
+    const [from, to] = weekend ? WINDOW.weekend : WINDOW.weekday;
+    const rows = [];
+    for (let hr = from; hr <= to; hr++) {
+      const i = idx[hr], j = idx[hr + 1];
+      if (i === undefined) continue;
+      // Sonne und Regen sind Summen der zurückliegenden Stunde: der Wert von hr+1 gilt für hr bis hr+1.
+      const inWin = hr < to && j !== undefined;
+      rows.push({
+        hr, temp: num(h.temperature_2m[i]), code: h.weather_code[i], isDay: h.is_day[i] !== 0,
+        sunMin: inWin ? Math.round((num(h.sunshine_duration[j]) || 0) / 60) : null,
+        mm: inWin ? (num(h.precipitation[j]) || 0) : null,
+        prob: inWin ? num(h.precipitation_probability[j]) : null,
+        now: date === today && hr === nowHr
+      });
+    }
+    const temps = rows.map(r => r.temp).filter(v => v !== null);
+    const wet = rows.filter(r => r.mm >= 0.1);
+    return {
+      date, dow, weekend, from, to, rows,
+      label: n === 0 && date === today ? "Heute" : n === 1 ? "Morgen" : WD[dow],
+      sub: (n < 2 ? WD[dow] + " " : "") + (+date.slice(8, 10)) + "." + (+date.slice(5, 7)) + ".",
+      tMin: temps.length ? Math.min(...temps) : null,
+      tMax: temps.length ? Math.max(...temps) : null,
+      sunMin: rows.reduce((s, r) => s + (r.sunMin || 0), 0),
+      mm: rows.reduce((s, r) => s + (r.mm || 0), 0),
+      probMax: Math.max(0, ...rows.map(r => r.prob || 0)),
+      wetFrom: wet.length ? wet[0].hr : null,
+      wetTo: wet.length ? wet[wet.length - 1].hr + 1 : null,
+      over: date === today && nowHr > to
+    };
+  });
+}
+
+// ---------- Symbole ----------
+const S = 'fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"';
+const CLOUD = `<path d="M7 18h10a4 4 0 0 0 .6-7.95A5.5 5.5 0 0 0 7.1 9.6 4.2 4.2 0 0 0 7 18z" ${S}/>`;
+const CLOUD_HI = `<path d="M7 15h10a3.6 3.6 0 0 0 .5-7.15A5 5 0 0 0 8 7.4 3.8 3.8 0 0 0 7 15z" ${S}/>`;
+const ICON = {
+  sun: `<g stroke="var(--sun)"><circle cx="12" cy="12" r="4.2" fill="var(--sun)" stroke="none"/><path d="M12 2.5v2.5M12 19v2.5M2.5 12H5M19 12h2.5M5.3 5.3l1.8 1.8M16.9 16.9l1.8 1.8M5.3 18.7l1.8-1.8M16.9 7.1l1.8-1.8" ${S} stroke="var(--sun)"/></g>`,
+  moon: `<path d="M19 14.5A7.5 7.5 0 0 1 9.5 5a7.5 7.5 0 1 0 9.5 9.5z" ${S}/>`,
+  partly: `<circle cx="8" cy="8" r="3.4" fill="var(--sun)"/><path d="M8 1.8v1.6M1.8 8h1.6M3.6 3.6l1.2 1.2M12.4 3.6l-1.2 1.2" ${S} stroke="var(--sun)"/><path d="M9 20h8.5a3.5 3.5 0 0 0 .4-6.98A4.8 4.8 0 0 0 9 12.6 3.7 3.7 0 0 0 9 20z" ${S} fill="var(--card)"/>`,
+  cloud: CLOUD,
+  fog: `${CLOUD_HI}<path d="M5 18.5h14M7 21.5h10" ${S}/>`,
+  rain: `${CLOUD_HI}<path d="M8.5 18l-1 3M12.5 18l-1 3M16.5 18l-1 3" ${S} stroke="var(--rain)"/>`,
+  snow: `${CLOUD_HI}<g fill="var(--rain)"><circle cx="8" cy="19" r="1.1"/><circle cx="12" cy="20.5" r="1.1"/><circle cx="16" cy="19" r="1.1"/></g>`,
+  storm: `${CLOUD_HI}<path d="M12.5 16l-2.5 3.5h3L11 23" ${S} stroke="var(--sun)"/>`
+};
+function iconFor(code, isDay) {
+  let k = "cloud", name = "bewölkt";
+  if (code === 0 || code === 1) { k = isDay ? "sun" : "moon"; name = isDay ? "sonnig" : "klar"; }
+  else if (code === 2) { k = isDay ? "partly" : "cloud"; name = "wolkig"; }
+  else if (code === 45 || code === 48) { k = "fog"; name = "Nebel"; }
+  else if ((code >= 51 && code <= 67) || (code >= 80 && code <= 82)) { k = "rain"; name = "Regen"; }
+  else if ((code >= 71 && code <= 77) || code === 85 || code === 86) { k = "snow"; name = "Schnee"; }
+  else if (code >= 95) { k = "storm"; name = "Gewitter"; }
+  return `<svg viewBox="0 0 24 24" role="img" aria-label="${name}">${ICON[k]}</svg>`;
+}
+
+// ---------- Darstellung ----------
+const deg = v => (v === null ? "–" : Math.round(v) + "°");
+const dur = m => (m >= 60 ? Math.floor(m / 60) + " h " + String(m % 60).padStart(2, "0") : m + " min");
+
+function dayHTML(d) {
+  if (!d.rows.length) return `<div class="empty">Für diesen Tag liegen keine Daten vor.</div>`;
+  const rainNote = d.wetFrom === null
+    ? "<b>Trocken</b> im ganzen Zeitraum."
+    : `Regen zwischen <b>${d.wetFrom} und ${d.wetTo} Uhr</b>.`;
+  const rows = d.rows.map(r => {
+    const sun = r.sunMin === null ? "" :
+      `<div class="bar" aria-hidden="true"><i style="width:${Math.min(100, r.sunMin / 60 * 100)}%"></i></div><small>${r.sunMin}′</small>`;
+    let rain = "";
+    if (r.mm !== null) {
+      const wet = r.mm >= 0.1;
+      rain = `<div class="rainc${wet ? " wet" : ""}"><b class="${wet ? "" : "dry"}">${wet ? mmFmt.format(r.mm) + " mm" : "–"}</b>` +
+             `<small>${r.prob === null ? "" : Math.round(r.prob) + " %"}</small></div>`;
+    }
+    return `<div class="row${r.now ? " now" : ""}"><div class="hr">${r.hr}</div><div class="ic">${iconFor(r.code, r.isDay)}</div>` +
+           `<div class="t">${deg(r.temp)}</div><div class="sunc">${sun}</div>${rain || "<div></div>"}</div>`;
+  }).join("");
+  return `
+    <div class="sum">
+      <div class="tile"><small>TEMPERATUR</small><b>${deg(d.tMin)} bis ${deg(d.tMax)}</b><span>${d.from}–${d.to} Uhr</span></div>
+      <div class="tile sun"><small>SONNE</small><b>${dur(d.sunMin)}</b><span>von ${d.to - d.from} h</span></div>
+      <div class="tile rain"><small>REGEN</small><b>${mmFmt.format(d.mm)} mm</b><span>Risiko bis ${Math.round(d.probMax)} %</span></div>
+    </div>
+    <p class="note">${d.weekend ? "Wochenende" : "Werktag"}, ${d.from} bis ${d.to} Uhr. ${rainNote}</p>
+    <div class="hours">
+      <div class="row head"><div class="hr">UHR</div><div></div><div class="t">°C</div><div>SONNE (MIN JE STD.)</div><div style="text-align:right">REGEN</div></div>
+      ${rows}
+    </div>`;
+}
+
+function render() {
+  if (!current) return;
+  const days = buildDays(current.data);
+  const main = $("days"), tabs = $("tabs");
+  const keep = firstRender ? null : activeIndex();
+  $("placeName").textContent = current.place.name;
+  main.innerHTML = days.map(d => `<section class="day" aria-label="${esc(d.label + ", " + d.sub)}">${dayHTML(d)}</section>`).join("");
+  tabs.innerHTML = days.map((d, i) =>
+    `<button type="button" role="tab" data-i="${i}" aria-selected="false"><b>${d.label}</b><small>${d.sub}</small></button>`).join("");
+  // Ist das heutige Zeitfenster schon vorbei, gleich mit morgen starten.
+  const start = keep !== null ? keep : (days[0] && days[0].over && days.length > 1 ? 1 : 0);
+  firstRender = false;
+  main.scrollTo({ left: start * main.clientWidth, behavior: "auto" });
+  markTab(start);
+  const t = new Date(current.t);
+  setStatus("Stand " + t.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" }) + " Uhr" +
+            (t.toDateString() === new Date().toDateString() ? "" : " (" + t.toLocaleDateString("de-DE") + ")"));
+}
+function setStatus(msg, err) { const s = $("status"); s.textContent = msg; s.classList.toggle("err", !!err); }
+function activeIndex() { const m = $("days"); return Math.round(m.scrollLeft / Math.max(1, m.clientWidth)); }
+function markTab(i) { [...$("tabs").children].forEach((b, n) => b.setAttribute("aria-selected", n === i ? "true" : "false")); }
+function goTo(i) {
+  const m = $("days"), n = m.children.length;
+  i = Math.max(0, Math.min(n - 1, i));
+  const smooth = !matchMedia("(prefers-reduced-motion: reduce)").matches;
+  m.scrollTo({ left: i * m.clientWidth, behavior: smooth ? "smooth" : "auto" });
+}
+
+async function refresh() {
+  setStatus("Lade Wetter …");
+  try {
+    const data = await fetchWeather(place);
+    current = { t: Date.now(), place, data };
+    save("tw.cache", current);
+    render();
+  } catch (e) {
+    if (current) { render(); setStatus("Keine Verbindung. Gezeigt wird der Stand von " + new Date(current.t).toLocaleString("de-DE", { dateStyle: "short", timeStyle: "short" }) + ".", true); }
+    else { $("days").innerHTML = `<section class="day"><div class="empty">Das Wetter konnte nicht geladen werden.<br>Bitte Internetverbindung prüfen und „Aktualisieren“ antippen.</div></section>`; setStatus(String(e.message || e), true); }
+  }
+}
+function setPlace(p) {
+  place = p; save("tw.place", p); firstRender = true; current = null;
+  $("placeName").textContent = p.name; togglePanel(false); refresh();
+}
+function togglePanel(open) {
+  const p = $("placePanel"); p.hidden = open === undefined ? !p.hidden : !open;
+  $("placeBtn").setAttribute("aria-expanded", String(!p.hidden));
+  if (!p.hidden) $("q").focus();
+}
+
+// ---------- Bedienung ----------
+$("refresh").addEventListener("click", refresh);
+$("placeBtn").addEventListener("click", () => togglePanel());
+$("tabs").addEventListener("click", e => { const b = e.target.closest("button"); if (b) goTo(+b.dataset.i); });
+let raf = 0;
+$("days").addEventListener("scroll", () => { cancelAnimationFrame(raf); raf = requestAnimationFrame(() => markTab(activeIndex())); }, { passive: true });
+document.addEventListener("keydown", e => {
+  if (e.target.tagName === "INPUT") return;
+  if (e.key === "ArrowRight") goTo(activeIndex() + 1);
+  if (e.key === "ArrowLeft") goTo(activeIndex() - 1);
+});
+addEventListener("resize", () => { const i = [...$("tabs").children].findIndex(b => b.getAttribute("aria-selected") === "true"); if (i > 0) $("days").scrollTo({ left: i * $("days").clientWidth }); });
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden && (!current || Date.now() - current.t > MAX_AGE_MIN * 60000)) refresh();
+});
+
+$("searchForm").addEventListener("submit", async e => {
+  e.preventDefault();
+  const q = $("q").value.trim(), box = $("results");
+  if (!q) return;
+  box.textContent = "Suche …";
+  try {
+    const r = await fetch("https://geocoding-api.open-meteo.com/v1/search?count=5&language=de&format=json&name=" + encodeURIComponent(q));
+    const list = (await r.json()).results || [];
+    if (!list.length) { box.textContent = "Kein Ort gefunden. Bitte anders schreiben."; return; }
+    box.innerHTML = list.map((x, i) => `<button type="button" data-i="${i}">${esc(x.name)} <small>${esc([x.admin1, x.country].filter(Boolean).join(", "))}</small></button>`).join("");
+    box.onclick = ev => { const b = ev.target.closest("button"); if (!b) return; const x = list[+b.dataset.i]; box.innerHTML = ""; $("q").value = ""; setPlace({ name: x.name, lat: x.latitude, lon: x.longitude }); };
+  } catch { box.textContent = "Die Ortssuche ist gerade nicht erreichbar."; }
+});
+$("geoBtn").addEventListener("click", () => {
+  const box = $("results");
+  if (!navigator.geolocation || !isSecureContext) { box.textContent = "Der Standort geht nur, wenn die Seite über https geöffnet ist. Bitte den Ort suchen."; return; }
+  box.textContent = "Bestimme Standort …";
+  navigator.geolocation.getCurrentPosition(
+    pos => { box.textContent = ""; setPlace({ name: "Mein Standort", lat: +pos.coords.latitude.toFixed(3), lon: +pos.coords.longitude.toFixed(3) }); },
+    () => { box.textContent = "Der Standort wurde nicht freigegeben. Bitte den Ort suchen."; },
+    { timeout: 10000, maximumAge: 600000 });
+});
+
+// ---------- Start ----------
+const cached = load("tw.cache");
+if (cached && cached.place && cached.place.lat === place.lat && cached.place.lon === place.lon) { current = cached; try { render(); } catch { current = null; } }
+$("placeName").textContent = place.name;
+if (!current || Date.now() - current.t > MAX_AGE_MIN * 60000) refresh();
+</script>
+</body>
+</html>
