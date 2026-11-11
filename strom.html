@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#f3f5f1">
+<title>Strompreis</title>
+<style>
+/* Layout: eine helle, senkrecht scrollende Seite. Oben die Empfehlungen für die Geräte,
+   darunter die Preisliste je Tag; zwischen den Tagen wischt man waagerecht (scroll-snap). */
+:root{
+  --bg:#f3f5f1; --card:#ffffff; --ink:#1c2620; --muted:#5d6b62; --line:#dde3dc; --accent:#1f6f46; --now:#eef4ff;
+  --font: system-ui, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  color-scheme: light;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font-family:var(--font);font-size:16px;line-height:1.35;-webkit-tap-highlight-color:transparent}
+button{font:inherit;color:inherit;cursor:pointer}
+a{color:var(--accent)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.wrap{max-width:560px;margin:0 auto;padding:12px 16px 20px;display:flex;flex-direction:column;gap:14px}
+
+header{display:flex;flex-direction:column;gap:4px}
+.top{display:flex;align-items:center;justify-content:space-between;gap:12px}
+h1{font-size:1.25rem;margin:0}
+.top div{display:flex;gap:8px;align-items:center}
+.pill{background:var(--card);border:1px solid var(--line);border-radius:999px;padding:6px 12px;font-size:.85rem;color:var(--muted);text-decoration:none;white-space:nowrap}
+#status{font-size:.8rem;color:var(--muted);min-height:1.1em}
+#status.err{color:#b3261e}
+h2{font-size:.78rem;letter-spacing:.05em;color:var(--muted);margin:0 2px;font-weight:600}
+section.block{display:flex;flex-direction:column;gap:8px}
+
+/* Geräte */
+.dev{background:var(--card);border-radius:12px;border-left:6px solid var(--line);overflow:hidden}
+.dev summary{list-style:none;padding:10px 12px;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 10px;align-items:baseline;cursor:pointer}
+.dev summary::-webkit-details-marker{display:none}
+.dev .name{font-weight:600}
+.dev .name small{font-weight:400;color:var(--muted);font-size:.78rem;margin-left:6px;white-space:nowrap}
+.dev .do{font-weight:700;font-size:1.05rem;text-align:right;white-space:nowrap}
+.dev .when{font-size:.85rem;color:var(--muted)}
+.dev .cost{font-size:.85rem;color:var(--muted);text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+.dev .cost b{color:var(--ink)}
+.opts{border-top:1px solid var(--line);padding:6px 12px 10px;font-size:.85rem;font-variant-numeric:tabular-nums}
+.opts p{margin:4px 0 6px;color:var(--muted);font-size:.78rem}
+.opt{display:grid;grid-template-columns:88px minmax(0,1fr) 62px;gap:8px;padding:3px 0;align-items:center}
+.opt.best{font-weight:700}
+.opt span:last-child{text-align:right}
+.opt i{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px}
+
+/* Legende, Schalter, Reiter */
+.legend{display:flex;gap:3px;font-size:.68rem;color:var(--muted);font-variant-numeric:tabular-nums}
+.legend div{flex:1;text-align:center;min-width:0}
+.legend i{display:block;height:8px;border-radius:3px;margin-bottom:3px}
+.ctrl{display:flex;gap:8px;flex-wrap:wrap}
+.seg{display:flex;border:1px solid var(--line);border-radius:999px;overflow:hidden;background:var(--card)}
+.seg button,.tog{border:0;background:none;padding:6px 12px;font-size:.85rem;color:var(--muted)}
+.seg button[aria-pressed="true"]{background:var(--ink);color:#fff}
+.tog{border:1px solid var(--line);border-radius:999px;background:var(--card)}
+.tog[aria-pressed="true"]{background:var(--ink);border-color:var(--ink);color:#fff}
+nav{display:flex;gap:6px}
+nav button{flex:1;min-width:0;background:none;border:1px solid var(--line);border-radius:10px;padding:6px 2px;display:flex;flex-direction:column;align-items:center;color:var(--muted)}
+nav button b{font-size:.92rem;color:var(--ink)}
+nav button small{font-size:.7rem}
+nav button[aria-selected="true"]{background:var(--ink);border-color:var(--ink);color:#fff}
+nav button[aria-selected="true"] b{color:#fff}
+
+/* Tagesseiten */
+#days{display:flex;align-items:flex-start;overflow-x:auto;scroll-snap-type:x mandatory;scrollbar-width:none;overscroll-behavior-x:contain;margin:0 -16px}
+#days::-webkit-scrollbar{display:none}
+.day{flex:0 0 100%;scroll-snap-align:start;scroll-snap-stop:always;padding:0 16px;display:flex;flex-direction:column;gap:8px;min-width:0}
+.empty{background:var(--card);border-radius:12px;color:var(--muted);text-align:center;padding:28px 16px}
+.sum{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.tile{background:var(--card);border-radius:12px;padding:8px 10px;display:flex;flex-direction:column;gap:1px;border-top:5px solid var(--line);min-width:0}
+.tile small{font-size:.7rem;color:var(--muted);letter-spacing:.03em}
+.tile b{font-size:1.1rem;font-variant-numeric:tabular-nums;white-space:nowrap}
+.tile span{font-size:.75rem;color:var(--muted)}
+.rows{background:var(--card);border-radius:12px;padding:2px 0;font-variant-numeric:tabular-nums}
+.row{display:grid;grid-template-columns:52px 54px minmax(0,1fr);align-items:center;column-gap:10px;padding:5px 12px;min-height:32px}
+.row + .row{border-top:1px solid var(--line)}
+.row.q{min-height:24px;padding-top:2px;padding-bottom:2px;font-size:.9rem}
+.row.hour0{border-top:2px solid var(--line)}
+.row.head{font-size:.7rem;color:var(--muted);letter-spacing:.03em;min-height:0}
+.row.now{background:var(--now);box-shadow:inset 3px 0 0 #2f5fd0}
+.row.past{opacity:.55}
+.tm{color:var(--muted);font-size:.88em}
+.row.now .tm{color:var(--ink);font-weight:700}
+.pr{text-align:right;font-weight:700}
+.track{height:12px;border-radius:6px;background:#eef1ec;overflow:hidden}
+.row.q .track{height:9px}
+.track i{display:block;height:100%;border-radius:6px;min-width:5px}
+footer{font-size:.72rem;color:var(--muted);text-align:center}
+footer a{color:inherit}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <div class="top">
+    <h1>Strompreis</h1>
+    <div><a class="pill" href="./">Wetter</a><button class="pill" id="refresh" type="button">Aktualisieren</button></div>
+  </div>
+  <div id="status" role="status">Lade Preise …</div>
+</header>
+
+<section class="block" aria-labelledby="h-dev">
+  <h2 id="h-dev">BESTER ZEITPUNKT, WENN DU JETZT EINSTELLST</h2>
+  <div id="devices"><div class="empty">Lade Preise …</div></div>
+</section>
+
+<section class="block" aria-labelledby="h-price">
+  <h2 id="h-price">BÖRSENPREIS IN CENT JE KWH</h2>
+  <div class="legend" id="legend" aria-hidden="true"></div>
+  <div class="ctrl">
+    <div class="seg" role="group" aria-label="Auflösung">
+      <button type="button" id="resH" aria-pressed="true">Stunden</button>
+      <button type="button" id="resQ" aria-pressed="false">15 Minuten</button>
+    </div>
+    <button type="button" class="tog" id="past" aria-pressed="false">Vergangenes zeigen</button>
+  </div>
+  <nav id="tabs" role="tablist" aria-label="Tag wählen"></nav>
+  <div id="days" tabindex="0" aria-label="Tage, wischen zum Wechseln"></div>
+</section>
+
+<footer id="foot">Preise: Day-Ahead-Auktion DE-LU, Bundesnetzagentur | SMARD.de über <a href="https://energy-charts.info/">energy-charts.info</a> (Fraunhofer ISE), CC BY 4.0</footer>
+</div>
+
+<script>
+"use strict";
+// ---------- Einstellungen ----------
+const ZONE = "DE-LU";
+const PAST_DAYS = 3;          // so viele frühere Tage lassen sich einblenden
+const MAX_DELAY_H = 24;       // längste Vorwahl der Geräte in Stunden
+const MAX_AGE_MIN = 15;       // danach beim Öffnen neu laden
+// Geräte. mode "end": Vorwahl = Stunden bis zum ENDE; mode "start": Stunden bis zum BEGINN.
+// profile: typischer Lastgang als Abschnitte [Minuten, Leistung in kW] (Annahmen, hier anpassbar).
+const DEVICES = [
+  { id: "koch", name: "Kochwäsche", sub: "2 h 45 min", mode: "end",
+    profile: [[10, 0.1], [45, 2.1], [85, 0.12], [25, 0.3]] },            // Aufheizen am Anfang, ca. 1,9 kWh
+  { id: "w30", name: "30-Grad-Wäsche", sub: "3 h 30 min", mode: "end",
+    profile: [[10, 0.1], [7, 2.0], [173, 0.07], [20, 0.3]] },            // kurzes Aufheizen, ca. 0,55 kWh
+  { id: "spuel", name: "Spülmaschine", sub: "3 h 30 min", mode: "start",
+    profile: [[15, 0.05], [30, 0.9], [85, 0.05], [20, 0.9], [60, 0.02]] } // zwei Heizphasen, ca. 0,85 kWh
+];
+// Farbskala nach festen Preisgrenzen (ct/kWh)
+const BANDS = [
+  { to: 0,  color: "#0b5a2c", label: "unter 0" },
+  { to: 5,  color: "#2e9d57", label: "0–5" },
+  { to: 10, color: "#97d06f", label: "5–10" },
+  { to: 15, color: "#f1d021", label: "10–15" },
+  { to: 20, color: "#f2a21c", label: "15–20" }
+];
+const RED_FROM = [226, 74, 58], RED_TO = [108, 14, 20], RED_SPAN = 20;   // ab 20 ct, bis 40 ct dunkler werdend
+
+// ---------- Hilfen ----------
+const $ = id => document.getElementById(id);
+const load = k => { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } };
+const save = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} };
+const n1 = new Intl.NumberFormat("de-DE", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+const WD = ["So", "Mo", "Di", "Mi", "Do", "Fr", "Sa"];
+const MIN = 60000, HOUR = 3600000, DAY = 86400000;
+const fmtB = new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Berlin", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+function bp(ms) { const s = fmtB.format(ms); return { date: s.slice(0, 10), h: +s.slice(11, 13), hm: s.slice(11, 16) }; }
+const shiftDate = (d, n) => new Date(Date.parse(d + "T12:00:00Z") + n * DAY).toISOString().slice(0, 10);
+const dowOf = d => new Date(d + "T12:00:00Z").getUTCDay();
+function colorFor(ct) {
+  for (const b of BANDS) if (ct < b.to) return b.color;
+  const k = Math.min(1, (ct - 20) / RED_SPAN);
+  return "rgb(" + RED_FROM.map((a, i) => Math.round(a + (RED_TO[i] - a) * k)).join(",") + ")";
+}
+const totalMin = p => p.reduce((s, x) => s + x[0], 0);
+const totalKwh = p => p.reduce((s, x) => s + x[0] / 60 * x[1], 0);
+
+let state = { res: (load("sp.res") === "q" ? "q" : "h"), past: load("sp.past") === true };
+let current = null;      // { t, raw }
+let model = null;        // { step, slots:[{t,ct}], map }
+let activeDate = null;
+
+// ---------- Daten ----------
+async function fetchPrices() {
+  const today = bp(Date.now()).date;
+  const u = "https://api.energy-charts.info/price?bzn=" + ZONE + "&start=" + shiftDate(today, -PAST_DAYS) + "&end=" + shiftDate(today, 1);
+  const r = await fetch(u);
+  if (!r.ok) throw new Error("energy-charts.info antwortet mit Fehler " + r.status);
+  return r.json();
+}
+function buildModel(raw) {
+  const slots = [];
+  (raw.unix_seconds || []).forEach((s, i) => { const p = raw.price[i]; if (typeof p === "number") slots.push({ t: s * 1000, ct: p / 10 }); });  // EUR/MWh -> ct/kWh
+  let step = HOUR;
+  for (let i = 1; i < slots.length; i++) step = Math.min(step, slots[i].t - slots[i - 1].t);
+  if (!(step > 0)) step = HOUR;
+  // Lücken oder Stundenwerte in einer 15-Minuten-Reihe: jeder Wert gilt bis zum nächsten, höchstens eine Stunde.
+  const map = new Map();
+  slots.forEach((s, i) => {
+    const until = Math.min(i + 1 < slots.length ? slots[i + 1].t : s.t + step, s.t + HOUR);
+    for (let t = s.t; t < until; t += step) map.set(t, s.ct);
+  });
+  return { step, slots, map };
+}
+const priceAt = (m, ms) => m.map.get(Math.floor(ms / m.step) * m.step);
+
+// Kosten eines Laufs in Cent: Lastgang minutenweise mit dem jeweils gültigen Preis verrechnet.
+function runCost(m, start, profile) {
+  let t = start, sum = 0;
+  for (const [mins, kw] of profile) {
+    for (let i = 0; i < mins; i++, t += MIN) {
+      const p = priceAt(m, t);
+      if (p === undefined) return null;
+      sum += kw / 60 * p;
+    }
+  }
+  return sum;
+}
+// Alle einstellbaren Varianten eines Geräts ab "now" (auf die Minute gerundet).
+function options(m, dev, now) {
+  const dur = totalMin(dev.profile) * MIN, list = [];
+  const add = (n, start) => { const c = runCost(m, start, dev.profile); if (c !== null) list.push({ n, start, end: start + dur, cost: c }); };
+  add(0, now);                                                        // sofort starten
+  if (dev.mode === "end") for (let n = Math.ceil(dur / HOUR); n <= MAX_DELAY_H; n++) { const s = now + n * HOUR - dur; if (s > now) add(n, s); }
+  else for (let n = 1; n <= MAX_DELAY_H; n++) add(n, now + n * HOUR);
+  return list;
+}
+
+// ---------- Darstellung: Geräte ----------
+function spanText(o, now) {
+  const a = bp(o.start), b = bp(o.end), t = bp(now).date;
+  const tag = d => d === t ? "" : d === shiftDate(t, 1) ? " morgen" : " " + WD[dowOf(d)];
+  return a.hm + (a.date !== b.date ? tag(a.date) : "") + " bis " + b.hm + tag(b.date);
+}
+const doText = (dev, o) => o.n === 0 ? "Jetzt starten" : (dev.mode === "end" ? "Ende in " : "Start in ") + o.n + " h";
+function renderDevices() {
+  if (!model) return;
+  const now = Math.floor(Date.now() / MIN) * MIN;
+  const open = new Set([...document.querySelectorAll(".dev[open]")].map(d => d.dataset.id));
+  $("devices").innerHTML = DEVICES.map(dev => {
+    const list = options(model, dev, now);
+    const head = `<span class="name">${dev.name}<small>${dev.sub}</small></span>`;
+    if (!list.length) return `<details class="dev" data-id="${dev.id}"><summary>${head}<span class="do">–</span><span class="when">Für die nächsten Stunden liegen keine Preise vor.</span><span></span></summary></details>`;
+    const best = list.reduce((a, b) => (b.cost < a.cost - 1e-9 ? b : a));
+    const nowOpt = list.find(o => o.n === 0);
+    const avg = best.cost / totalKwh(dev.profile);
+    const cmp = nowOpt && best !== nowOpt ? `sofort: ${n1.format(nowOpt.cost)} ct` : "";
+    const rows = list.map(o => `<div class="opt${o === best ? " best" : ""}"><span><i style="background:${colorFor(o.cost / totalKwh(dev.profile))}"></i>${o.n === 0 ? "sofort" : o.n + " h"}</span><span>${spanText(o, now)}</span><span>${n1.format(o.cost)} ct</span></div>`).join("");
+    return `<details class="dev" data-id="${dev.id}" style="border-left-color:${colorFor(avg)}"${open.has(dev.id) ? " open" : ""}>
+      <summary>${head}<span class="do">${doText(dev, best)}</span>
+        <span class="when">läuft ${spanText(best, now)}</span><span class="cost"><b>${n1.format(best.cost)} ct</b>${cmp ? " · " + cmp : ""}</span></summary>
+      <div class="opts"><p>${dev.mode === "end" ? "Vorwahl bis zum Ende" : "Vorwahl bis zum Start"}, gerechnet mit etwa ${n1.format(totalKwh(dev.profile))} kWh und typischem Verlauf. Kosten nur Börsenpreis.</p>${rows}</div>
+    </details>`;
+  }).join("");
+}
+
+// ---------- Darstellung: Preise ----------
+function dayData(date) {
+  const q = model.slots.filter(s => bp(s.t).date === date).map(s => ({ t: s.t, end: s.t + model.step, ct: s.ct, hm: bp(s.t).hm, h: bp(s.t).h }));
+  const byH = new Map();
+  q.forEach(s => { const k = Math.floor(s.t / HOUR) * HOUR; if (!byH.has(k)) byH.set(k, []); byH.get(k).push(s); });
+  const h = [...byH.entries()].map(([t, a]) => ({ t, end: t + HOUR, ct: a.reduce((x, s) => x + s.ct, 0) / a.length, hm: a[0].hm.slice(0, 2) + " Uhr", h: a[0].h }));
+  return { q, h };
+}
+function dayHTML(date, today, now, scaleMax) {
+  const d = dayData(date);
+  if (!d.q.length) return `<div class="empty">${date > today ? "Die Preise für morgen liegen noch nicht vor. Sie erscheinen meist am frühen Nachmittag." : "Für diesen Tag liegen keine Preise vor."}</div>`;
+  const lo = d.h.reduce((a, b) => (b.ct < a.ct ? b : a)), hi = d.h.reduce((a, b) => (b.ct > a.ct ? b : a));
+  const avg = d.q.reduce((s, x) => s + x.ct, 0) / d.q.length;
+  const tile = (label, v, sub) => `<div class="tile" style="border-top-color:${colorFor(v)}"><small>${label}</small><b>${n1.format(v)} ct</b><span>${sub}</span></div>`;
+  let list = state.res === "q" ? d.q : d.h;
+  const hidden = date === today && !state.past ? list.filter(s => s.end <= now).length : 0;
+  if (hidden) list = list.filter(s => s.end > now);
+  const rows = list.map(s => {
+    const cls = ["row"]; if (state.res === "q") { cls.push("q"); if (s.hm.endsWith(":00")) cls.push("hour0"); }
+    if (s.t <= now && now < s.end) cls.push("now"); else if (s.end <= now) cls.push("past");
+    const w = Math.max(0, Math.min(100, Math.abs(s.ct) / scaleMax * 100));
+    return `<div class="${cls.join(" ")}"><div class="tm">${s.hm}</div><div class="pr">${n1.format(s.ct)}</div><div class="track"><i style="width:${w}%;background:${colorFor(s.ct)}"></i></div></div>`;
+  }).join("");
+  return `<div class="sum">${tile("GÜNSTIGSTE", lo.ct, lo.hm)}${tile("MITTEL", avg, "0 bis 24 Uhr")}${tile("TEUERSTE", hi.ct, hi.hm)}</div>
+    <div class="rows"><div class="row head"><div>${state.res === "q" ? "AB" : "STUNDE"}</div><div class="pr" style="font-weight:400">CT/KWH</div><div></div></div>${rows || ""}</div>`;
+}
+function renderPrices() {
+  if (!model) return;
+  const now = Date.now(), today = bp(now).date, tomorrow = shiftDate(today, 1);
+  const dates = [];
+  if (state.past) for (let i = PAST_DAYS; i >= 1; i--) dates.push(shiftDate(today, -i));
+  dates.push(today, tomorrow);
+  const shown = model.slots.filter(s => dates.includes(bp(s.t).date));
+  const scaleMax = Math.max(30, ...shown.map(s => Math.abs(s.ct)));
+  const label = d => d === today ? "Heute" : d === tomorrow ? "Morgen" : WD[dowOf(d)];
+  const sub = d => (d === today || d === tomorrow ? WD[dowOf(d)] + " " : "") + (+d.slice(8)) + "." + (+d.slice(5, 7)) + ".";
+  $("tabs").innerHTML = dates.map((d, i) => `<button type="button" role="tab" data-i="${i}" data-d="${d}" aria-selected="false"><b>${label(d)}</b><small>${sub(d)}</small></button>`).join("");
+  const el = $("days");
+  el.innerHTML = dates.map(d => `<section class="day" aria-label="${label(d)}, ${sub(d)}">${dayHTML(d, today, now, scaleMax)}</section>`).join("");
+  if (!dates.includes(activeDate)) activeDate = today;
+  const i = dates.indexOf(activeDate);
+  el.scrollTo({ left: i * el.clientWidth, behavior: "auto" });
+  markTab(i);
+}
+function renderLegend() {
+  $("legend").innerHTML = BANDS.map(b => `<div><i style="background:${b.color}"></i>${b.label}</div>`).join("") +
+    `<div style="flex:1.6"><i style="background:linear-gradient(90deg,${colorFor(20)},${colorFor(40)})"></i>20 bis 40+</div>`;
+}
+function render() {
+  $("resH").setAttribute("aria-pressed", String(state.res === "h"));
+  $("resQ").setAttribute("aria-pressed", String(state.res === "q"));
+  $("past").setAttribute("aria-pressed", String(state.past));
+  renderDevices(); renderPrices();
+  if (current) setStatus("Stand " + new Date(current.t).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" }) + " Uhr. Reiner Börsenpreis ohne Netzentgelte, Abgaben und Steuern.");
+}
+function setStatus(msg, err) { const s = $("status"); s.textContent = msg; s.classList.toggle("err", !!err); }
+function activeIndex() { const m = $("days"); return Math.round(m.scrollLeft / Math.max(1, m.clientWidth)); }
+function markTab(i) { [...$("tabs").children].forEach((b, n) => { b.setAttribute("aria-selected", n === i ? "true" : "false"); if (n === i) activeDate = b.dataset.d; }); }
+function goTo(i) {
+  const m = $("days"); i = Math.max(0, Math.min(m.children.length - 1, i));
+  m.scrollTo({ left: i * m.clientWidth, behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+}
+
+async function refresh() {
+  setStatus("Lade Preise …");
+  try {
+    const raw = await fetchPrices();
+    current = { t: Date.now(), raw }; model = buildModel(raw);
+    if (!model.slots.length) throw new Error("Die Antwort enthält keine Preise.");
+    save("sp.cache", current);
+    render();
+  } catch (e) {
+    if (model) { render(); setStatus("Keine Verbindung. Gezeigt wird der Stand von " + new Date(current.t).toLocaleString("de-DE", { dateStyle: "short", timeStyle: "short" }) + ".", true); }
+    else {
+      const msg = `<div class="empty">Die Preise konnten nicht geladen werden.<br>Bitte Internetverbindung prüfen und „Aktualisieren“ antippen.</div>`;
+      $("devices").innerHTML = msg; $("days").innerHTML = ""; setStatus(String(e.message || e), true);
+    }
+  }
+}
+
+// ---------- Bedienung ----------
+$("refresh").addEventListener("click", refresh);
+$("resH").addEventListener("click", () => { state.res = "h"; save("sp.res", "h"); render(); });
+$("resQ").addEventListener("click", () => { state.res = "q"; save("sp.res", "q"); render(); });
+$("past").addEventListener("click", () => { state.past = !state.past; save("sp.past", state.past); render(); });
+$("tabs").addEventListener("click", e => { const b = e.target.closest("button"); if (b) goTo(+b.dataset.i); });
+let raf = 0;
+$("days").addEventListener("scroll", () => { cancelAnimationFrame(raf); raf = requestAnimationFrame(() => markTab(activeIndex())); }, { passive: true });
+addEventListener("resize", () => { const i = [...$("tabs").children].findIndex(b => b.getAttribute("aria-selected") === "true"); if (i >= 0) $("days").scrollTo({ left: i * $("days").clientWidth }); });
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) return;
+  if (!current || Date.now() - current.t > MAX_AGE_MIN * MIN) refresh(); else render();
+});
+setInterval(() => { if (!document.hidden && model) { renderDevices(); if (new Date().getMinutes() % 15 === 0) renderPrices(); } }, 60000);
+
+// ---------- Start ----------
+renderLegend();
+const cached = load("sp.cache");
+if (cached && cached.raw) { try { current = cached; model = buildModel(cached.raw); render(); } catch { current = null; model = null; } }
+if (!current || Date.now() - current.t > MAX_AGE_MIN * MIN) refresh();
+</script>
+</body>
+</html>
