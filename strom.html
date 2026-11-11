@@ -84,6 +84,9 @@ nav button[aria-selected="true"] b{color:#fff}
 .row.head{font-size:.7rem;color:var(--muted);letter-spacing:.03em;min-height:0}
 .row.now{background:var(--now);box-shadow:inset 3px 0 0 #2f5fd0}
 .row.past{opacity:.55}
+.row.lo{background:#dff3e2}
+.row.hi{background:#fbe2df}
+.row.lo .tm,.row.hi .tm{color:var(--ink);font-weight:700}
 .tm{color:var(--muted);font-size:.88em}
 .row.now .tm{color:var(--ink);font-weight:700}
 .pr{text-align:right;font-weight:700}
@@ -111,7 +114,6 @@ footer a{color:inherit}
 
 <section class="block" aria-labelledby="h-price">
   <h2 id="h-price">BÖRSENPREIS IN CENT JE KWH</h2>
-  <div class="legend" id="legend" aria-hidden="true"></div>
   <div class="ctrl">
     <div class="seg" role="group" aria-label="Auflösung">
       <button type="button" id="resH" aria-pressed="true">Stunden</button>
@@ -272,20 +274,19 @@ function dayData(date) {
 function dayHTML(date, today, now, scaleMax) {
   const d = dayData(date);
   if (!d.q.length) return `<div class="empty">${date > today ? "Die Preise für morgen liegen noch nicht vor. Sie erscheinen meist am frühen Nachmittag." : "Für diesen Tag liegen keine Preise vor."}</div>`;
-  const lo = d.h.reduce((a, b) => (b.ct < a.ct ? b : a)), hi = d.h.reduce((a, b) => (b.ct > a.ct ? b : a));
-  const avg = d.q.reduce((s, x) => s + x.ct, 0) / d.q.length;
-  const tile = (label, v, sub) => `<div class="tile" style="border-top-color:${colorFor(v)}"><small>${label}</small><b>${n1.format(v)} ct</b><span>${sub}</span></div>`;
   let list = state.res === "q" ? d.q : d.h;
   const hidden = date === today && !state.past ? list.filter(s => s.end <= now).length : 0;
   if (hidden) list = list.filter(s => s.end > now);
+  // günstigstes und teuerstes der gezeigten Zeitfenster farbig hinterlegen
+  const lo = list.length > 1 ? list.reduce((a, b) => (b.ct < a.ct ? b : a)) : null;
+  const hi = list.length > 1 ? list.reduce((a, b) => (b.ct > a.ct ? b : a)) : null;
   const rows = list.map(s => {
-    const cls = ["row"]; if (state.res === "q") { cls.push("q"); if (s.hm.endsWith(":00")) cls.push("hour0"); }
+    const cls = ["row"]; if (lo !== hi) { if (s === lo) cls.push("lo"); if (s === hi) cls.push("hi"); } if (state.res === "q") { cls.push("q"); if (s.hm.endsWith(":00")) cls.push("hour0"); }
     if (s.t <= now && now < s.end) cls.push("now"); else if (s.end <= now) cls.push("past");
     const w = Math.max(0, Math.min(100, Math.abs(s.ct) / scaleMax * 100));
     return `<div class="${cls.join(" ")}"><div class="tm">${s.hm}</div><div class="pr">${n1.format(s.ct)}</div><div class="track"><i style="width:${w}%;background:${colorFor(s.ct)}"></i></div></div>`;
   }).join("");
-  return `<div class="sum">${tile("GÜNSTIGSTE", lo.ct, lo.hm)}${tile("MITTEL", avg, "0 bis 24 Uhr")}${tile("TEUERSTE", hi.ct, hi.hm)}</div>
-    <div class="rows"><div class="row head"><div>${state.res === "q" ? "AB" : "STUNDE"}</div><div class="pr" style="font-weight:400">CT/KWH</div><div></div></div>${rows || ""}</div>`;
+  return `<div class="rows"><div class="row head"><div>${state.res === "q" ? "AB" : "STUNDE"}</div><div class="pr" style="font-weight:400">CT/KWH</div><div></div></div>${rows || ""}</div>`;
 }
 function renderPrices() {
   if (!model) return;
@@ -304,10 +305,6 @@ function renderPrices() {
   const i = dates.indexOf(activeDate);
   el.scrollTo({ left: i * el.clientWidth, behavior: "auto" });
   markTab(i);
-}
-function renderLegend() {
-  $("legend").innerHTML = BANDS.map(b => `<div><i style="background:${b.color}"></i>${b.label}</div>`).join("") +
-    `<div style="flex:1.6"><i style="background:linear-gradient(90deg,${colorFor(20)},${colorFor(40)})"></i>20 bis 40+</div>`;
 }
 function render() {
   $("resH").setAttribute("aria-pressed", String(state.res === "h"));
@@ -357,7 +354,6 @@ document.addEventListener("visibilitychange", () => {
 setInterval(() => { if (!document.hidden && model) { renderDevices(); if (new Date().getMinutes() % 15 === 0) renderPrices(); } }, 60000);
 
 // ---------- Start ----------
-renderLegend();
 const cached = load("sp.cache");
 if (cached && cached.raw) { try { current = cached; model = buildModel(cached.raw); render(); } catch { current = null; model = null; } }
 if (!current || Date.now() - current.t > MAX_AGE_MIN * MIN) refresh();
